@@ -181,6 +181,16 @@ pub struct ReplayRequest {
 #[serde(deny_unknown_fields)]
 pub struct NoArgs {}
 
+/// `diagnostics`: how fast the game runs. The one field is optional.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DiagnosticsRequest {
+    /// Only list the diagnostics whose path starts with this, for example `bevy_fairy/schedule`
+    /// for the per-schedule timings or `process` for this process's CPU and memory.
+    #[serde(default)]
+    pub prefix: Option<String>,
+}
+
 /// `run`: run one command the game registered. `commands` lists them with their parameters.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -311,6 +321,36 @@ const SCREENSHOT_METHOD: &str = "bevy_fairy/screenshot";
 const CAPTURE_METHOD: &str = "bevy_fairy/capture";
 const SCENE_METHOD: &str = "bevy_fairy/scene";
 const QUIT_METHOD: &str = "bevy_fairy/quit";
+const DIAGNOSTICS_METHOD: &str = "bevy_fairy/diagnostics";
+
+/// One line an agent can act on, read from a `bevy_fairy/diagnostics` reply: the frame rate, the
+/// frame time, and how much of the frame the main schedules take. When the main update is a small
+/// share of the frame, the time goes to rendering, the GPU or the present, not to game systems.
+/// A value the game did not measure is said to be missing, never filled in.
+pub fn diagnostics_headline(reply: &Value) -> String {
+    let number = |key: &str, field: &str| reply.get(key).and_then(|v| v.get(field)).and_then(Value::as_f64);
+    let mut parts = Vec::new();
+    match (number("fps", "average"), number("fps", "min"), number("fps", "max")) {
+        (Some(avg), Some(min), Some(max)) => parts.push(format!("fps {avg:.2} average (min {min:.2}, max {max:.2})")),
+        _ => parts.push("fps not measured".to_string()),
+    }
+    let frame = number("frame_time_ms", "average");
+    if let Some(frame) = frame {
+        parts.push(format!("frame {frame:.1} ms average"));
+    }
+    match (number("main_update_ms", "average"), frame) {
+        (Some(main), Some(frame)) if frame > 0.0 => parts.push(format!(
+            "main schedules {main:.1} ms ({:.0}% of the frame; the rest is rendering, GPU and present)",
+            (main / frame * 100.0).min(100.0)
+        )),
+        (Some(main), _) => parts.push(format!("main schedules {main:.1} ms")),
+        (None, _) => {}
+    }
+    if let Some(entities) = reply.get("entities").and_then(Value::as_u64) {
+        parts.push(format!("{entities} entities"));
+    }
+    parts.join("; ")
+}
 
 /// The text an agent reads when nothing answers. Kept exact, because agents match on it.
 fn no_game_text(url: &str) -> String {
@@ -455,8 +495,9 @@ pub const COLLABORATION_PROTOCOL: &str =
                  DRIVING A GAME THAT REGISTERS ITS OWN COMMANDS: call `status` first (is the game up and \
                  ready?), then `commands` (what can be run, with each one's parameters and an example), then \
                  `run` for each step. `screenshot` saves a PNG on this machine, `scene save` writes the \
-                 commands you ran to a replayable file, `brp` calls any Bevy Remote Protocol method, and \
-                 `quit` closes the game.\n\n\
+                 commands you ran to a replayable file, `brp` calls any Bevy Remote Protocol method, \
+                 `diagnostics` measures how fast the game runs (fps, frame time, time per schedule, \
+                 entities), and `quit` closes the game.\n\n\
                  INSPECTING THE GAME: `observe` reads the game's state. `detect_anomaly` looks for \
                  anomalies in it. `hypothesis` tests a claim about it -- it needs a `description` of \
                  the claim and a `success_condition` that decides it, or it cannot run. \
@@ -804,6 +845,22 @@ impl BevyDebuggerTools {
                 Ok(value) => tool_ok(value.to_string()),
                 Err(text) => tool_err(text),
             },
+        }
+    }
+
+    /// Measure how fast the game runs
+    #[tool(description = "Measure how fast the running game is: fps and frame time (current, average, min and max over the kept history), the entity count, the time each main schedule takes (First, PreUpdate, Update, PostUpdate, ...) and every other value in Bevy's DiagnosticsStore, such as CPU and memory when the game measures them. The reply carries a one-line \"headline\". A value the game does not measure is listed under \"missing\" with the plugin that would measure it, never guessed. `prefix` narrows the full list.")]
+    pub async fn diagnostics(&self, Parameters(req): Parameters<DiagnosticsRequest>) -> Result<CallToolResult, McpError> {
+        let params = req.prefix.map(|prefix| serde_json::json!({"prefix": prefix}));
+        match self.call_game(DIAGNOSTICS_METHOD, params).await {
+            Ok(mut value) => {
+                let headline = diagnostics_headline(&value);
+                if let Some(fields) = value.as_object_mut() {
+                    fields.insert("headline".to_string(), Value::from(headline));
+                }
+                tool_ok(value.to_string())
+            }
+            Err(text) => tool_err(text),
         }
     }
 

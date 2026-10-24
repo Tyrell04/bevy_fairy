@@ -20,6 +20,9 @@
 //!   speed. `bevy_fairy/quit` exits cleanly.
 //! - **Input.** `bevy_fairy/input` injects keys, clicks, drags and text as the
 //!   window would receive them.
+//! - **Diagnostics.** `bevy_fairy/diagnostics` reports frame time, fps, the entity
+//!   count and every other value in Bevy's `DiagnosticsStore`.
+//!   [`DebuggerPlugin::with_diagnostics`] fills that store and times each main schedule.
 //!
 //! Research behind the design: Gregory, *Game Engine Architecture* 3rd ed., §10.4–10.6
 //! (game-registered console commands, a debug camera and pause); Ostrowski & Aroudj,
@@ -64,6 +67,7 @@ use bevy::prelude::*;
 use bevy::remote::{BrpError, RemotePlugin};
 
 mod commands;
+mod diagnostics;
 mod input;
 mod quit;
 mod ready;
@@ -76,6 +80,7 @@ mod guide;
 mod screenshot;
 
 pub use commands::{DebugCommandInfo, DebugCommands, DebugCommandsAppExt};
+pub use diagnostics::{DiagnosticsParams, MAIN_UPDATE, SCHEDULE_PREFIX};
 pub use input::{
     apply_pending_input, cursor_position, logical_for, typed, DebugCursor, InputAction,
     InputCommand, InputKind, PendingInput,
@@ -114,6 +119,7 @@ pub(crate) fn brp_error(code: i16, message: impl Into<String>) -> BrpError {
 #[derive(Default)]
 pub struct DebuggerPlugin {
     host_signals_ready: bool,
+    diagnostics: bool,
 }
 
 impl DebuggerPlugin {
@@ -122,6 +128,20 @@ impl DebuggerPlugin {
     /// command answers "not ready yet".
     pub fn host_signals_ready(mut self) -> Self {
         self.host_signals_ready = true;
+        self
+    }
+
+    /// Fills the store `bevy_fairy/diagnostics` reads. Adds `FrameTimeDiagnosticsPlugin` and
+    /// `EntityCountDiagnosticsPlugin` unless the host already added them (with the
+    /// `plugin-sysinfo` feature, `SystemInformationDiagnosticsPlugin` too), and times every
+    /// schedule of the main loop as `bevy_fairy/schedule/<Schedule>` plus their sum,
+    /// `bevy_fairy/main_update`.
+    ///
+    /// A host that adds one of those Bevy plugins itself must add it **before** this plugin,
+    /// or Bevy rejects the second copy. Without this call `bevy_fairy/diagnostics` still
+    /// answers with whatever the host registered, and names what is missing.
+    pub fn with_diagnostics(mut self) -> Self {
+        self.diagnostics = true;
         self
     }
 }
@@ -133,7 +153,8 @@ impl Plugin for DebuggerPlugin {
             .with_method_main("bevy_fairy/status", ready::handle_status)
             .with_method_main("bevy_fairy/commands", commands::handle_commands)
             .with_method_main("bevy_fairy/scene", scene::handle_scene)
-            .with_method_main("bevy_fairy/quit", quit::handle_quit);
+            .with_method_main("bevy_fairy/quit", quit::handle_quit)
+            .with_method_main("bevy_fairy/diagnostics", diagnostics::handle_diagnostics);
         #[cfg(feature = "plugin-screenshot")]
         let remote = remote
             .with_method_main("bevy_fairy/screenshot", screenshot::handle_screenshot)
@@ -154,6 +175,10 @@ impl Plugin for DebuggerPlugin {
         app.init_resource::<Captures>();
 
         time::register(app);
+
+        if self.diagnostics {
+            diagnostics::add_diagnostic_plugins(app);
+        }
 
         if let Ok(path) = std::env::var(scene::SCENE_ENV) {
             scene::start_playback(app, &path);
@@ -182,5 +207,8 @@ impl Plugin for DebuggerPlugin {
             app.is_plugin_added::<bevy::input::InputPlugin>(),
             "DebuggerPlugin needs bevy::input::InputPlugin: injected keys and clicks are written as KeyboardInput/MouseButtonInput messages, and InputPlugin owns the systems that fold those into ButtonInput. Without it every injection is accepted and read by nobody. Add InputPlugin (DefaultPlugins includes it; MinimalPlugins does not)."
         );
+        if self.diagnostics {
+            diagnostics::time_main_schedules(app);
+        }
     }
 }

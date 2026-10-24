@@ -15,7 +15,7 @@
 //!
 //! - **The plugin** ([`plugin`]) is what a *game* links. It registers BRP methods
 //!   (`bevy_fairy/status`, `commands`, `screenshot`, `capture`, `input`, `scene`, `guide`,
-//!   `quit`) and lets the game register its own typed commands.
+//!   `diagnostics`, `quit`) and lets the game register its own typed commands.
 //! - **The server** ([`server`]) is the `bevy-fairy` binary. It speaks the Model Context
 //!   Protocol to a coding agent and the Bevy Remote Protocol to a running game.
 //!
@@ -93,8 +93,9 @@ pub mod server;
 #[cfg(feature = "plugin")]
 pub use plugin::{
     apply_pending_input, cursor_position, handle_input, logical_for, typed, DebugCommandInfo,
-    DebugCommands, DebugCommandsAppExt, DebugCursor, DebugReady, DebuggerPlugin, InputAction,
-    InputCommand, InputKind, PendingInput, SceneLog, ScenePlayback, SceneStep,
+    DebugCommands, DebugCommandsAppExt, DebugCursor, DebugReady, DebuggerPlugin, DiagnosticsParams,
+    InputAction, InputCommand, InputKind, PendingInput, SceneLog, ScenePlayback, SceneStep,
+    MAIN_UPDATE, SCHEDULE_PREFIX,
 };
 
 // The guide overlay and the capture target, which are their own features.

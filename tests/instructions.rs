@@ -24,6 +24,7 @@ fn every_tool_named_in_the_instructions_exists() {
         "scene",
         "brp",
         "quit",
+        "diagnostics",
         "observe",
         "detect_anomaly",
         "hypothesis",

@@ -49,9 +49,11 @@ dependency graph ever gains something that could synthesise an OS event.
 | **Press keys, type, click, drag** | Inject keyboard, text, mouse, scroll and cursor input that the game reads like the real thing. |
 | **Ask a person** | Show one instruction at a time on the player's screen and watch for the state it asked for (`guide`). |
 | **Record and replay** | Save the commands a session ran and replay them when the game starts (`scene`). |
+| **Measure speed** | Read fps, frame time, the time each main schedule takes, the entity count, and CPU and memory when the game measures them (`diagnostics`). |
 
-It cannot see frame time, CPU or memory: BRP does not report them, and the tools say so rather than
-make up a number.
+Speed comes from Bevy's own `DiagnosticsStore`. A value the game does not measure is reported as
+missing, with the plugin that would measure it, never as a made-up number. See
+[Measure how fast the game runs](#measure-how-fast-the-game-runs).
 
 ## Quick start
 
@@ -231,9 +233,38 @@ Every game command the agent runs is recorded. `scene save <path>` writes them t
 starting the game with `BEVY_FAIRY_SCENE=<path>` replays them, one step per frame, once the game
 reports ready. Scenes record commands, not raw input.
 
+### Measure how fast the game runs
+
+Build the plugin with `.with_diagnostics()`:
+
+```rust
+app.add_plugins(DebuggerPlugin::default().with_diagnostics());
+```
+
+That adds Bevy's `FrameTimeDiagnosticsPlugin` and `EntityCountDiagnosticsPlugin` (unless your
+game already added them, in which case add them *before* `DebuggerPlugin`) and times every
+schedule of the main loop: a tiny stamp schedule runs between each pair in `MainScheduleOrder`,
+so no system of yours is wrapped or reordered. With the `plugin-sysinfo` feature it also adds
+`SystemInformationDiagnosticsPlugin` (CPU and memory of the system and the process).
+
+```sh
+curl -s localhost:15702 -d '{"jsonrpc":"2.0","id":1,"method":"bevy_fairy/diagnostics"}'
+# {"result":{"fps":{"current":..,"average":..,"min":..,"max":..,"samples":120,...},
+#   "frame_time_ms":{...},"main_update_ms":{...},"entities":4321,
+#   "diagnostics":[{"path":"bevy_fairy/schedule/Update",...},...],"missing":[]}}
+```
+
+`main_update_ms` is the sum of the main schedules (`First` to `Last`). When the frame time is
+much larger, the frame is spent outside the main world: rendering, the GPU, or waiting for the
+present. `{"prefix": "bevy_fairy/schedule"}` narrows the list. The `diagnostics` tool returns
+the same reply with a one-line `headline`.
+
+Per-system timings are not offered: Bevy 0.20 only produces them through its tracing features
+(`trace_tracy`, `trace_chrome`), which have to be compiled into the game.
+
 ## Reference
 
-- **Tools:** 13 MCP tools. [`docs/mcp-tools.md`](https://github.com/Ladvien/bevy_fairy/blob/main/docs/mcp-tools.md)
+- **Tools:** 14 MCP tools. [`docs/mcp-tools.md`](https://github.com/Ladvien/bevy_fairy/blob/main/docs/mcp-tools.md)
   has every description and argument, generated from the server's own `tools/list`.
 - **API:** the plugin's types are documented on [docs.rs](https://docs.rs/bevy_fairy).
 
@@ -247,6 +278,7 @@ reports ready. Scenes record commands, not raw input.
 | `bevy_fairy/scene` | `plugin` | Show or clear the recorded commands |
 | `bevy_fairy/time` | `plugin` | Pause the game clock or change its speed (a built-in command) |
 | `bevy_fairy/quit` | `plugin` | Ask the game to exit |
+| `bevy_fairy/diagnostics` | `plugin` | Fps, frame time, per-schedule timings, entity count and every other `DiagnosticsStore` value |
 | `bevy_fairy/screenshot`, `bevy_fairy/capture` | `plugin-screenshot` | Capture a frame and fetch it as PNG |
 | `bevy_fairy/guide`, `bevy_fairy/guide+watch` | `plugin-guide` | Post a guide script; stream its progress |
 
@@ -260,6 +292,7 @@ Bevy's own methods (`world.query`, `world.get_resources`, `registry.schema`, ...
 | `plugin` | Your game | The plugin; four direct dependencies |
 | `plugin-screenshot` | Your game, with capture | `plugin` + Bevy's renderer |
 | `plugin-guide` | Your game, with the guide overlay | `plugin` + Bevy UI and picking |
+| `plugin-sysinfo` | Your game, with CPU and memory in `bevy_fairy/diagnostics` | `plugin` + Bevy's `sysinfo_plugin` |
 
 A game should depend on `bevy_fairy` with `default-features = false`, or it compiles the server too.
 

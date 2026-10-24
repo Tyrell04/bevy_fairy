@@ -105,6 +105,7 @@ fn no_doc_tells_the_reader_to_add_a_second_remote_plugin() {
         "bevy_fairy/scene",
         "bevy_fairy/quit",
         "bevy_fairy/status",
+        "bevy_fairy/diagnostics",
     ] {
         assert!(
             plugin.contains(&format!("\"{method}\"")),

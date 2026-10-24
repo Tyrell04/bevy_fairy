@@ -194,6 +194,11 @@ plugin = [
 # it off.
 plugin-screenshot = ["plugin", "bevy/bevy_render", "bevy/png", "dep:image"]
 
+# CPU and memory in `bevy_fairy/diagnostics`: `DebuggerPlugin::with_diagnostics()` also adds
+# Bevy's `SystemInformationDiagnosticsPlugin`, which needs Bevy's `sysinfo_plugin` feature (and
+# with it the `sysinfo` crate, which reads the process table, never the input devices).
+plugin-sysinfo = ["plugin", "bevy/sysinfo_plugin"]
+
 # `bevy_fairy/guide`: the agent-to-human overlay and the guided steps. It spawns a UI node, so
 # a host that keeps its UI behind its own surfaces turns this off. `bevy_picking` is only for
 # `Pickable::IGNORE`, so the overlay never eats a host's clicks.
@@ -286,6 +291,10 @@ required-features = ["plugin"]
 
 [[test]]
 name = "plugin_leaf"
+required-features = ["plugin"]
+
+[[test]]
+name = "plugin_diagnostics"
 required-features = ["plugin"]
 
 # The plugin's examples need the plugin's own feature set on.

@@ -38,7 +38,7 @@ fn feature_registering(method: &str) -> Option<&'static str> {
         "bevy_fairy/screenshot" | "bevy_fairy/capture" => Some("plugin-screenshot"),
         "bevy_fairy/guide" | "bevy_fairy/guide+watch" => Some("plugin-guide"),
         "bevy_fairy/input" | "bevy_fairy/status" | "bevy_fairy/commands" | "bevy_fairy/scene"
-        | "bevy_fairy/quit" | "bevy_fairy/time" => Some("plugin"),
+        | "bevy_fairy/quit" | "bevy_fairy/time" | "bevy_fairy/diagnostics" => Some("plugin"),
         _ => None,
     }
 }

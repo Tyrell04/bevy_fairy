@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+The tools could not see how fast a game runs. Now they can.
+
+### Added
+
+- **`bevy_fairy/diagnostics`**, a BRP method of the plugin: fps and frame time (current,
+  average, smoothed, min and max over the kept history), the entity count, and every other
+  value in Bevy's `DiagnosticsStore`, sorted by path. A value nobody measures is listed under
+  `missing` with the plugin that would measure it. `{"prefix": ...}` narrows the list. Checked
+  by `tests/plugin_diagnostics.rs` against real frames of a headless app.
+- **`DebuggerPlugin::with_diagnostics()`** adds `FrameTimeDiagnosticsPlugin` and
+  `EntityCountDiagnosticsPlugin` unless the host already did, and times every schedule of the
+  main loop as `bevy_fairy/schedule/<Schedule>` plus their sum, `bevy_fairy/main_update`. A
+  stamp schedule runs between each pair in `MainScheduleOrder`; no host system is wrapped.
+- **The `plugin-sysinfo` feature**: `with_diagnostics()` also adds Bevy's
+  `SystemInformationDiagnosticsPlugin` (CPU and memory).
+- **The `diagnostics` MCP tool**: the same reply plus a one-line `headline` (fps, frame time,
+  and the share of the frame the main schedules take).
+
 ## 0.2.2 — 2026-10-23
 
 A documentation release: the README crates.io shows is rewritten from scratch. No code changed.

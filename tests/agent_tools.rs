@@ -1,4 +1,5 @@
-//! The agent-facing tools (`status`, `commands`, `run`, `screenshot`, `scene`, `quit`, `brp`),
+//! The agent-facing tools (`status`, `commands`, `run`, `screenshot`, `scene`, `quit`, `brp`,
+//! `diagnostics`),
 //! driven against an in-process fake of the game's BRP endpoint, so no Bevy game is needed.
 //!
 //! The fake answers the JSON-RPC shapes that the companion `bevy_fairy` serves. Each test
@@ -12,7 +13,8 @@ use base64::Engine as _;
 use bevy_fairy::server::brp_client::BrpClient;
 use bevy_fairy::server::config::Config;
 use bevy_fairy::server::mcp_tools::{
-    BevyDebuggerTools, BrpCallRequest, NoArgs, RunRequest, SceneAction, SceneRequest, ScreenshotRequest,
+    BevyDebuggerTools, BrpCallRequest, DiagnosticsRequest, NoArgs, RunRequest, SceneAction, SceneRequest,
+    ScreenshotRequest,
 };
 use rmcp::handler::server::tool::Parameters;
 use rmcp::model::CallToolResult;
@@ -113,6 +115,18 @@ fn dispatch(game: &mut FakeGame, method: &str, params: &Value) -> Result<Value, 
             _ => Err((-32602, "bevy_fairy/scene takes action get or clear".to_string())),
         },
         "bevy_fairy/quit" => Ok(json!({"quitting": true})),
+        // A slow game, as `bevy_fairy/diagnostics` reports one: 2 s frames, of which the main
+        // schedules take 40 ms. The prefix is echoed so the test can see it arrived.
+        "bevy_fairy/diagnostics" => Ok(json!({
+            "frame": 12,
+            "entities": 4321,
+            "fps": {"path": "fps", "current": 0.5, "average": 0.5, "min": 0.4, "max": 0.6, "samples": 10},
+            "frame_time_ms": {"path": "frame_time", "current": 2000.0, "average": 2000.0, "min": 1666.0, "max": 2500.0, "samples": 10},
+            "main_update_ms": {"path": "bevy_fairy/main_update", "current": 40.0, "average": 40.0, "min": 38.0, "max": 45.0, "samples": 10},
+            "diagnostics": [],
+            "missing": [],
+            "prefix_seen": params.get("prefix").cloned().unwrap_or(Value::Null),
+        })),
         other => Err((-32601, format!("method not found: {other}"))),
     }
 }
@@ -301,6 +315,36 @@ async fn status_reports_the_game_and_the_url_it_talks_to() {
 }
 
 #[tokio::test]
+async fn diagnostics_returns_the_games_numbers_with_a_headline() {
+    let port = start_fake_game(game_with(true, 0)).await;
+    let tools = tools_for(port);
+
+    let result = tools
+        .diagnostics(Parameters(DiagnosticsRequest { prefix: Some("bevy_fairy/schedule".to_string()) }))
+        .await
+        .expect("diagnostics returns a result");
+
+    assert_ne!(result.is_error, Some(true), "{}", text_of(&result));
+    let reply: Value = serde_json::from_str(&text_of(&result)).expect("diagnostics is JSON");
+    assert_eq!(reply["entities"], json!(4321));
+    assert_eq!(reply["prefix_seen"], json!("bevy_fairy/schedule"), "the prefix reaches the game");
+    let headline = reply["headline"].as_str().expect("a headline");
+    assert_eq!(
+        headline,
+        "fps 0.50 average (min 0.40, max 0.60); frame 2000.0 ms average; main schedules 40.0 ms \
+         (2% of the frame; the rest is rendering, GPU and present); 4321 entities"
+    );
+}
+
+#[test]
+fn a_diagnostics_headline_never_invents_a_number() {
+    let headline = bevy_fairy::server::mcp_tools::diagnostics_headline(&json!({
+        "entities": 3, "fps": null, "frame_time_ms": null, "main_update_ms": null
+    }));
+    assert_eq!(headline, "fps not measured; 3 entities");
+}
+
+#[tokio::test]
 async fn every_tool_says_no_game_answers_when_nothing_listens() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind a port to free");
     let port = listener.local_addr().expect("address").port();
@@ -352,6 +396,7 @@ async fn every_tool_says_no_game_answers_when_nothing_listens() {
         ("scene show", tools.scene(Parameters(SceneRequest { action: SceneAction::Show, path: None })).await),
         ("scene clear", tools.scene(Parameters(SceneRequest { action: SceneAction::Clear, path: None })).await),
         ("quit", tools.quit(Parameters(NoArgs {})).await),
+        ("diagnostics", tools.diagnostics(Parameters(DiagnosticsRequest { prefix: None })).await),
     ];
 
     for (name, outcome) in outcomes {

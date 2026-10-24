@@ -34,6 +34,14 @@ Look for anomalies in the game's entities. `action` picks the operation; `detect
 | `window_size` | integer | no | How many samples the window covers. |
 | `z_score_threshold` | number | no | The z-score above which a sample counts as anomalous. |
 
+## `diagnostics`
+
+Measure how fast the running game is: fps and frame time (current, average, min and max over the kept history), the entity count, the time each main schedule takes (First, PreUpdate, Update, PostUpdate, ...) and every other value in Bevy's DiagnosticsStore, such as CPU and memory when the game measures them. The reply carries a one-line "headline". A value the game does not measure is listed under "missing" with the plugin that would measure it, never guessed. `prefix` narrows the full list.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `prefix` | string | no | Only list the diagnostics whose path starts with this, for example `bevy_fairy/schedule` for the per-schedule timings or `process` for this process's CPU and memory. |
+
 ## `experiment`
 
 Run controlled experiments on your Bevy game: spawn, modify or delete entities and read back what changed. `action` picks the operation; `execute` carries the `actions` to run.
